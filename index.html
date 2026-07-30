@@ -507,7 +507,7 @@ tr.row-highlight td{background:rgba(255,98,0,.1)!important;border-left:3px solid
         <thead><tr>
           <th>ID</th><th>Nome</th><th>Região</th><th>Necessidade</th>
           <th>Data Pedido</th><th>Entrada Colaborador</th>
-          <th>Vendedores (I)</th><th>Vendedores (K)</th>
+          <th>Vendedores</th>
           <th>Produto</th><th>Assunto</th><th>Data Início</th><th>Data Finalizado</th>
         </tr></thead>
         <tbody id="vTbody"></tbody>
@@ -1232,41 +1232,49 @@ function renderTreinados(){
     return;
   }
   const srch=(document.getElementById('treinadosSrch')?.value||'').toLowerCase().trim();
-  const treinamentos=[];
+  // agora agrupamos por PEDIDO (linha), não por nome individual
+  const grupos=[];
   VENDAS_ALL.forEach(r=>{
     if(!r.dataInicio)return;
     const nomes=[...parseNomes(r.nomes_i),...parseNomes(r.nomes_k)];
+    if(!nomes.length)return;
     const dias=calcDiasUteis(r.dataInicio,r.dataFim);
-    nomes.forEach(nome=>{
-      treinamentos.push({nome,assunto:r.assunto||r.produto||r.necessidade||'—',dataInicio:r.dataInicio,dataFim:r.dataFim,dias,regiao:r.regiao||'—',pedidoId:r.id});
-    });
+    grupos.push({nomes,assunto:r.assunto||r.produto||r.necessidade||'—',dataInicio:r.dataInicio,dataFim:r.dataFim,dias,regiao:r.regiao||'—',pedidoId:r.id});
   });
-  const filtered=srch?treinamentos.filter(t=>t.nome.toLowerCase().includes(srch)||t.assunto.toLowerCase().includes(srch)||t.regiao.toLowerCase().includes(srch)):treinamentos;
+  const filtered=srch?grupos.filter(g=>g.nomes.some(n=>n.toLowerCase().includes(srch))||g.assunto.toLowerCase().includes(srch)||g.regiao.toLowerCase().includes(srch)):grupos;
   filtered.sort((a,b)=>{const da=a.dataInicio instanceof Date?a.dataInicio:new Date(0);const db=b.dataInicio instanceof Date?b.dataInicio:new Date(0);return db-da;});
-  const totalVendedores=new Set(treinamentos.map(t=>t.nome)).size;
-  const comDuracao=treinamentos.filter(t=>t.dias!==null);
-  const mediaDias=comDuracao.length?(comDuracao.reduce((s,t)=>s+t.dias,0)/comDuracao.length).toFixed(1):'—';
-  const finalizados=treinamentos.filter(t=>t.dataFim).length;
-  const andamento=treinamentos.filter(t=>!t.dataFim).length;
+
+  const allNomesFlat=[];
+  grupos.forEach(g=>g.nomes.forEach(n=>allNomesFlat.push(n)));
+  const totalVendedores=new Set(allNomesFlat).size;
+  const comDuracao=grupos.filter(g=>g.dias!==null);
+  const mediaDias=comDuracao.length?(comDuracao.reduce((s,g)=>s+g.dias,0)/comDuracao.length).toFixed(1):'—';
+  const finalizados=grupos.filter(g=>g.dataFim).length;
+  const andamento=grupos.filter(g=>!g.dataFim).length;
   if(statsEl){
     statsEl.innerHTML=`
       <div class="treinados-stat"><div class="treinados-stat-val">${totalVendedores}</div><div class="treinados-stat-lbl">Vendedores únicos</div></div>
-      <div class="treinados-stat"><div class="treinados-stat-val">${treinamentos.length}</div><div class="treinados-stat-lbl">Total de treinamentos</div></div>
+      <div class="treinados-stat"><div class="treinados-stat-val">${grupos.length}</div><div class="treinados-stat-lbl">Total de treinamentos</div></div>
       <div class="treinados-stat"><div class="treinados-stat-val">${mediaDias}</div><div class="treinados-stat-lbl">Dias médios por turma</div></div>
       <div class="treinados-stat"><div class="treinados-stat-val" style="color:var(--green)">${finalizados}</div><div class="treinados-stat-lbl">Finalizados</div></div>
       <div class="treinados-stat"><div class="treinados-stat-val" style="color:var(--amber)">${andamento}</div><div class="treinados-stat-lbl">Em andamento</div></div>`;
   }
   if(!filtered.length){el.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><p>Nenhum vendedor encontrado</p></div>';return;}
   const fmt=d=>d instanceof Date&&!isNaN(d)?d.toLocaleDateString('pt-BR'):'—';
-  el.innerHTML=filtered.map(t=>{
-    const initials=t.nome.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
-    const badge=getDuracaoBadge(t.dias);
-    const assunto=t.assunto.length>40?t.assunto.slice(0,40)+'…':t.assunto;
-    const dataStr=t.dataFim?`${fmt(t.dataInicio)} → ${fmt(t.dataFim)}`:`Início: ${fmt(t.dataInicio)}`;
+  el.innerHTML=filtered.map(g=>{
+    const nomesLabel=g.nomes.length>1
+      ? `${g.nomes.join(', ')} <span style="color:var(--gray-500);font-weight:600">(grupo de ${g.nomes.length})</span>`
+      : g.nomes[0];
+    const initials=g.nomes.length>1
+      ? `${g.nomes.length}x`
+      : (g.nomes[0].split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?');
+    const badge=getDuracaoBadge(g.dias);
+    const assunto=g.assunto.length>40?g.assunto.slice(0,40)+'…':g.assunto;
+    const dataStr=g.dataFim?`${fmt(g.dataInicio)} → ${fmt(g.dataFim)}`:`Início: ${fmt(g.dataInicio)}`;
     return`<div class="treinado-item">
       <div class="treinado-avatar">${initials}</div>
-      <div class="treinado-info"><div class="treinado-nome">${t.nome}</div><div class="treinado-assunto" title="${t.assunto}">📚 ${assunto} · 🗺️ ${t.regiao}</div></div>
-      <div class="treinado-data"><div class="treinado-data-val">${dataStr}</div><div class="treinado-data-sub">Pedido #${t.pedidoId}</div></div>
+      <div class="treinado-info"><div class="treinado-nome">${nomesLabel}</div><div class="treinado-assunto" title="${g.assunto}">📚 ${assunto} · 🗺️ ${g.regiao}</div></div>
+      <div class="treinado-data"><div class="treinado-data-val">${dataStr}</div><div class="treinado-data-sub">Pedido #${g.pedidoId}</div></div>
       <div class="treinado-duracao"><span class="duracao-badge ${badge.cls}">${badge.txt}</span></div>
     </div>`;
   }).join('');
@@ -1470,14 +1478,14 @@ function renderVTable(data){
   const slice=filtered.slice(start,start+vRows);
   const fmt=d=>d instanceof Date&&!isNaN(d)?d.toLocaleDateString('pt-BR'):'—';
   const tbody=document.getElementById('vTbody');if(!tbody)return;
-  if(!slice.length){tbody.innerHTML=`<tr><td colspan="12"><div class="empty"><div class="empty-icon">🔍</div><p>Nenhum resultado</p></div></td></tr>`;document.getElementById('vPager').innerHTML='';return;}
+  if(!slice.length){tbody.innerHTML=`<tr><td colspan="11"><div class="empty"><div class="empty-icon">🔍</div><p>Nenhum resultado</p></div></td></tr>`;document.getElementById('vPager').innerHTML='';return;}
   tbody.innerHTML=slice.map(r=>{
     const hl=vHighlightIds&&vHighlightIds.includes(r.id)?'row-highlight':'';
+    const vendedores=[r.nomes_i,r.nomes_k].filter(v=>v&&isValid(v)).join(', ');
     return`<tr class="${hl}">
       <td>${r.id||'—'}</td><td>${r.nome||'—'}</td><td>${r.regiao||'—'}</td><td>${r.necessidade||'—'}</td>
       <td>${fmt(r.dataPedido)}</td><td>${fmt(r.entradaColab)}</td>
-      <td style="color:var(--blue);font-size:11px">${r.nomes_i||'—'}</td>
-      <td style="color:var(--blue);font-size:11px">${r.nomes_k||'—'}</td>
+      <td style="color:var(--blue);font-size:11px">${vendedores||'—'}</td>
       <td>${r.produto||'—'}</td><td>${r.assunto||'—'}</td><td>${fmt(r.dataInicio)}</td>
       <td>${r.dataFim?`<span style="color:var(--green);font-weight:600">${fmt(r.dataFim)}</span>`:'<span style="color:var(--amber);font-weight:600">Em andamento</span>'}</td>
     </tr>`;
